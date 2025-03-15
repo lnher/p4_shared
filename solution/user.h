@@ -39,3 +39,8 @@ void* memset(void*, int, uint);
 void* malloc(uint);
 void free(void*);
 int atoi(const char*);
+
+// START ADDED CODE
+//const int VMALLOC_SIZE_BASE = 4096;
+//const int VMALLOC_SIZE_HUGE = 0x400000;
+// END ADDED CODE

@@ -21,7 +21,16 @@ struct {
   struct spinlock lock;
   int use_lock;
   struct run *freelist;
+
+  // START ADDED CODE
+  struct run *hugefreelist;
+  // END ADDED CODE
+
 } kmem;
+
+// START ADDED CODE
+void khugeinit(void *vstart, void *vend);
+// END ADDED CODE
 
 // Initialization happens in two phases.
 // 1. main() calls kinit1() while still using entrypgdir to place just
@@ -40,6 +49,12 @@ void
 kinit2(void *vstart, void *vend)
 {
   freerange(vstart, vend);
+
+  // START ADDED CODE
+  // we run khugeinit here to initialize the huge pages before the lock is given up
+  khugeinit(P2V(HUGE_PAGE_START), P2V(HUGE_PAGE_END));
+  // END ADDED CODE
+  
   kmem.use_lock = 1;
 }
 
@@ -94,3 +109,59 @@ kalloc(void)
   return (char*)r;
 }
 
+// START ADDED CODE 
+
+// r is a single node of a linked list that holds all free 
+// huge pages, hugefreelist is the head of that linked list
+//free a huge size page
+void khugefree(char *v) 
+{
+  struct run *r;
+
+  // if trying to free something that is not in 4MB chunks or 
+  // trying to free something outside of the huge page size range
+  // panic
+  if((uint)v % HUGE_PAGE_SIZE || V2P(v) < HUGE_PAGE_START || V2P(v) >= HUGE_PAGE_END)
+  {
+    panic("khugefree");
+  }
+
+  // fill memory with junk
+  memset(v, 1, HUGE_PAGE_SIZE);
+
+  if(kmem.use_lock)
+    acquire(&kmem.lock);
+  r = (struct run*)v;
+  r->next = kmem.hugefreelist;
+  kmem.hugefreelist = r;
+  if(kmem.use_lock)
+    release(&kmem.lock);
+}
+
+void freerangehuge(void *vstart, void *vend) 
+{
+  char *p;
+  p = (char*)HUGEPGROUNDUP((uint)vstart);
+  for(; p + HUGE_PAGE_SIZE <= (char*)vend; p += HUGE_PAGE_SIZE)
+    khugefree(p);
+}
+
+void khugeinit(void *vstart, void *vend) 
+{
+  freerangehuge(vstart, vend);
+}
+
+char* khughalloc(void)
+{
+  struct run *r;
+
+  if(kmem.use_lock)
+    acquire(&kmem.lock);
+  r = kmem.hugefreelist;
+  if(r)
+    kmem.hugefreelist = r->next;
+  if(kmem.use_lock)
+    release(&kmem.lock);
+  return (char*)r;
+}
+// END ADDED CODE
