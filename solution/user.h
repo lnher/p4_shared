@@ -25,6 +25,8 @@ int sleep(int);
 int uptime(void);
 int printhugepde(void);
 int procpgdirinfo(int*);
+int setthp(int); // added new sys calls
+int getthp(void);
 
 // ulib.c
 int stat(const char*, struct stat*);

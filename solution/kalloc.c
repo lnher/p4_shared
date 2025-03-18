@@ -121,9 +121,15 @@ void khugefree(char *v)
   // if trying to free something that is not in 4MB chunks or 
   // trying to free something outside of the huge page size range
   // panic
-  if((uint)v % HUGE_PAGE_SIZE || V2P(v) < HUGE_PAGE_START || V2P(v) >= HUGE_PAGE_END)
+  if((uint)v % HUGE_PAGE_SIZE)
   {
-    panic("khugefree");
+    panic("khugefree: first");
+  }
+  if(V2P(v) < HUGE_PAGE_START) {
+    panic("khugefree: second");
+  }
+  if(V2P(v) >= HUGE_PAGE_END) {
+    panic("khugefree: third");
   }
 
   // fill memory with junk
@@ -142,8 +148,9 @@ void freerangehuge(void *vstart, void *vend)
 {
   char *p;
   p = (char*)HUGEPGROUNDUP((uint)vstart);
-  for(; p + HUGE_PAGE_SIZE <= (char*)vend; p += HUGE_PAGE_SIZE)
+  for(; p + HUGE_PAGE_SIZE <= (char*)vend; p += HUGE_PAGE_SIZE) {
     khugefree(p);
+  }
 }
 
 void khugeinit(void *vstart, void *vend) 
@@ -151,7 +158,7 @@ void khugeinit(void *vstart, void *vend)
   freerangehuge(vstart, vend);
 }
 
-char* khughalloc(void)
+char* khugealloc(void)
 {
   struct run *r;
 

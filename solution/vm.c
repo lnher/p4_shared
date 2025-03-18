@@ -58,10 +58,11 @@ walkpgdir(pde_t *pgdir, const void *va, int alloc)
 // physical addresses starting at pa. va and size might not
 // be page-aligned.
 static int
-mappages(pde_t *pgdir, void *va, uint size, uint pa, int perm)
+mappages(pde_t *pgdir, void *va, uint size, uint pa, int perm) //CHECK AGAIN
 {
   char *a, *last;
   pte_t *pte;
+  uint page_size_flag = (perm & PTE_PS) ? HUGE_PAGE_SIZE : PGSIZE;
 
   a = (char*)PGROUNDDOWN((uint)va);
   last = (char*)PGROUNDDOWN(((uint)va) + size - 1);
@@ -73,8 +74,8 @@ mappages(pde_t *pgdir, void *va, uint size, uint pa, int perm)
     *pte = pa | perm | PTE_P;
     if(a == last)
       break;
-    a += PGSIZE;
-    pa += PGSIZE;
+    a += page_size_flag;
+    pa += page_size_flag;
   }
   return 0;
 }
@@ -112,6 +113,8 @@ static struct kmap {
  { (void*)KERNLINK, V2P(KERNLINK), V2P(data), 0},     // kern text+rodata
  { (void*)data,     V2P(data),     PHYSTOP,   PTE_W}, // kern data+memory
  { (void*)DEVSPACE, DEVSPACE,      0,         PTE_W}, // more devices
+ // for huge pages
+ { (void*)(KERNBASE + HUGE_PAGE_START), HUGE_PAGE_START, HUGE_PAGE_END, PTE_W}, // HUGE PAGES
 };
 
 // Set up kernel part of a page table.
@@ -223,28 +226,58 @@ allocuvm(pde_t *pgdir, uint oldsz, uint newsz)
 {
   char *mem;
   uint a;
+  struct proc *curproc = myproc(); // Get the current process
+  int use_huge_pages = curproc->use_huge_pages; // Access the flag
 
   if(newsz >= KERNBASE)
     return 0;
   if(newsz < oldsz)
     return oldsz;
 
-  a = PGROUNDUP(oldsz);
-  for(; a < newsz; a += PGSIZE){
-    mem = kalloc();
-    if(mem == 0){
-      cprintf("allocuvm out of memory\n");
-      deallocuvm(pgdir, newsz, oldsz);
-      return 0;
+  if(use_huge_pages) {
+    a = HUGEPGROUNDUP(oldsz);
+  }
+  else {
+    a = PGROUNDUP(oldsz);
+  } 
+
+  // Handle huge page allocation
+  if (use_huge_pages) {
+    for (; a < newsz; a += HUGE_PAGE_SIZE) {
+      mem = khugealloc();
+      if (mem == 0) {
+        cprintf("allocuvm out of memory\n");
+        deallocuvm(pgdir, newsz, oldsz);
+        return 0;
+      }
+      memset(mem, 0, HUGE_PAGE_SIZE);
+      // Map huge pages with PTE_PS flag
+      if (mappages(pgdir, (char *)a, HUGE_PAGE_SIZE, V2P(mem), PTE_W | PTE_U | PTE_PS) < 0) {
+        cprintf("allocuvm out of memory (2)\n");
+        deallocuvm(pgdir, newsz, oldsz);
+        khugefree(mem);
+        return 0;
+      }
     }
-    memset(mem, 0, PGSIZE);
-    if(mappages(pgdir, (char*)a, PGSIZE, V2P(mem), PTE_W|PTE_U) < 0){
-      cprintf("allocuvm out of memory (2)\n");
-      deallocuvm(pgdir, newsz, oldsz);
-      kfree(mem);
-      return 0;
+  } else {
+    // Handle base page allocation
+    for (; a < newsz; a += PGSIZE) {
+      mem = kalloc();
+      if (mem == 0) {
+        cprintf("allocuvm out of memory\n");
+        deallocuvm(pgdir, newsz, oldsz);
+        return 0;
+      }
+      memset(mem, 0, PGSIZE);
+      if (mappages(pgdir, (char *)a, PGSIZE, V2P(mem), PTE_W | PTE_U) < 0) {
+        cprintf("allocuvm out of memory (2)\n");
+        deallocuvm(pgdir, newsz, oldsz);
+        kfree(mem);
+        return 0;
+      }
     }
   }
+
   return newsz;
 }
 
@@ -261,8 +294,17 @@ deallocuvm(pde_t *pgdir, uint oldsz, uint newsz)
   if(newsz >= oldsz)
     return oldsz;
 
-  a = PGROUNDUP(newsz);
-  for(; a  < oldsz; a += PGSIZE){
+  struct proc *curproc = myproc(); // Get the current process
+  int use_huge_pages = curproc->use_huge_pages; // Access the flag
+
+  if(use_huge_pages) {
+    a = HUGEPGROUNDUP(oldsz);
+  }
+  else {
+    a = PGROUNDUP(oldsz);
+  }
+
+  for(; a < oldsz; ){
     pte = walkpgdir(pgdir, (char*)a, 0);
     if(!pte)
       a = PGADDR(PDX(a) + 1, 0, 0) - PGSIZE;
@@ -271,10 +313,20 @@ deallocuvm(pde_t *pgdir, uint oldsz, uint newsz)
       if(pa == 0)
         panic("kfree");
       char *v = P2V(pa);
-      kfree(v);
+
+      // Check if it's a huge page
+      if (*pte & PTE_PS) {
+        khugefree(v); // Free huge page
+        a += HUGE_PAGE_SIZE; // Skip over entire huge page
+      } else {
+        kfree(v); // Free base page
+        a += PGSIZE; // Skip over base page size
+      }
+
       *pte = 0;
     }
   }
+
   return newsz;
 }
 
@@ -287,11 +339,19 @@ freevm(pde_t *pgdir)
 
   if(pgdir == 0)
     panic("freevm: no pgdir");
-  deallocuvm(pgdir, KERNBASE, 0);
+
+  deallocuvm(pgdir, KERNBASE, 0); // Deallocate base pages
+
   for(i = 0; i < NPDENTRIES; i++){
     if(pgdir[i] & PTE_P){
       char * v = P2V(PTE_ADDR(pgdir[i]));
-      kfree(v);
+      if(pgdir[i] & PTE_PS){
+        // freeing huge page
+        khugefree(v);
+      } else {
+        // freeing regular page
+        kfree(v);
+      }
     }
   }
   kfree((char*)pgdir);
@@ -322,19 +382,41 @@ copyuvm(pde_t *pgdir, uint sz)
 
   if((d = setupkvm()) == 0)
     return 0;
-  for(i = 0; i < sz; i += PGSIZE){
-    if((pte = walkpgdir(pgdir, (void *) i, 0)) == 0)
-      panic("copyuvm: pte should exist");
-    if(!(*pte & PTE_P))
-      panic("copyuvm: page not present");
+
+  for(i = 0; i < sz; ){
+    if((pte = walkpgdir(pgdir, (void *) i, 0)) == 0){
+      i += (*pte & PTE_PS) ? HUGE_PAGE_SIZE : PGSIZE;
+      continue;
+    }
+
+    if(!(*pte & PTE_P)){
+      i += (*pte & PTE_PS) ? HUGE_PAGE_SIZE : PGSIZE;
+      continue;
+    }
+
     pa = PTE_ADDR(*pte);
     flags = PTE_FLAGS(*pte);
-    if((mem = kalloc()) == 0)
-      goto bad;
-    memmove(mem, (char*)P2V(pa), PGSIZE);
-    if(mappages(d, (void*)i, PGSIZE, V2P(mem), flags) < 0) {
-      kfree(mem);
-      goto bad;
+
+    if(*pte & PTE_PS){
+      // copy huge page
+      if((mem = khugealloc()) == 0)
+        goto bad;
+      memmove(mem, (char*)P2V(pa), HUGE_PAGE_SIZE);
+      if(mappages(d, (void*)i, HUGE_PAGE_SIZE, V2P(mem), flags) < 0) {
+        khugefree(mem);
+        goto bad;
+      }
+      i += HUGE_PAGE_SIZE;
+    } else {
+      // copy base page
+      if((mem = kalloc()) == 0)
+        goto bad;
+      memmove(mem, (char*)P2V(pa), PGSIZE);
+      if(mappages(d, (void*)i, PGSIZE, V2P(mem), flags) < 0) {
+        kfree(mem);
+        goto bad;
+      }
+      i += PGSIZE;
     }
   }
   return d;

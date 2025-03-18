@@ -20,6 +20,9 @@ extern void trapret(void);
 
 static void wakeup1(void *chan);
 
+//ADDED FOR NEW SYS CALL
+//int thp = 0;
+
 void
 pinit(void)
 {
@@ -124,6 +127,9 @@ userinit(void)
   extern char _binary_initcode_start[], _binary_initcode_size[];
 
   p = allocproc();
+
+  // to initialize hugesz to 0
+  p->hugesz = 0;
   
   initproc = p;
   if((p->pgdir = setupkvm()) == 0)
@@ -156,20 +162,48 @@ userinit(void)
 // Grow current process's memory by n bytes.
 // Return 0 on success, -1 on failure.
 int
-growproc(int n)
+growproc(int n) //CHECK AGAIN
 {
   uint sz;
   struct proc *curproc = myproc();
+  int use_huge_pages = curproc->use_huge_pages; // Get the flag from the proc structure
 
-  sz = curproc->sz;
-  if(n > 0){
-    if((sz = allocuvm(curproc->pgdir, sz, sz + n)) == 0)
-      return -1;
-  } else if(n < 0){
-    if((sz = deallocuvm(curproc->pgdir, sz, sz + n)) == 0)
-      return -1;
+  if (use_huge_pages) {
+    sz = curproc->hugesz;
+  } else {
+    sz = curproc->sz;
   }
-  curproc->sz = sz;
+
+  if(n > 0){
+    if (use_huge_pages) {
+      if((sz = allocuvm(curproc->pgdir, sz, sz + n)) == 0)
+        return -1;
+      curproc->hugesz = sz;
+
+    } else {
+      if((sz = allocuvm(curproc->pgdir, sz, sz + n)) == 0)
+        return -1;
+      curproc->sz = sz;
+    }
+  } else if(n < 0){
+    if (use_huge_pages) {
+      if((sz = deallocuvm(curproc->pgdir, sz, sz + n)) == 0)
+        return -1;
+      curproc->hugesz = sz;
+    }
+    else {
+      if((sz = deallocuvm(curproc->pgdir, sz, sz + n)) == 0)
+        return -1;
+      curproc->sz = sz;
+    }
+  }
+
+  if (use_huge_pages) {
+    curproc->hugesz = sz;
+  } else {
+    curproc->sz = sz;
+  }
+
   switchuvm(curproc);
   return 0;
 }

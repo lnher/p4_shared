@@ -38,6 +38,7 @@ enum procstate { UNUSED, EMBRYO, SLEEPING, RUNNABLE, RUNNING, ZOMBIE };
 struct proc {
   uint sz;                     // Size of process memory allocated in base page heap (bytes)
   uint hugesz;                 // Size of process memory allocated in huge page heap (bytes)
+  int use_huge_pages;          // Flag to indicate huge page allocation
   pde_t* pgdir;                // Page table
   char *kstack;                // Bottom of kernel stack for this process
   enum procstate state;        // Process state

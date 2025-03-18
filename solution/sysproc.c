@@ -7,6 +7,9 @@
 #include "mmu.h"
 #include "proc.h"
 
+//added for new syscall
+int thp = 0;
+
 int
 sys_fork(void)
 {
@@ -36,6 +39,15 @@ sys_kill(void)
   return kill(pid);
 }
 
+int sys_setthp(int setvalue) {
+  thp = setvalue;
+  return 0;
+}
+
+int sys_getthp(void) {
+  return thp;
+}
+
 int
 sys_getpid(void)
 {
@@ -47,12 +59,23 @@ sys_sbrk(void)
 {
   int addr;
   int n;
+  int use_huge_pages;
 
   if(argint(0, &n) < 0)
     return -1;
-  addr = myproc()->sz;
+
+  struct proc *curproc = myproc();
+  use_huge_pages = curproc->use_huge_pages; // get the flag in the proc structure
+
+  if (use_huge_pages) {
+    addr = curproc->hugesz;
+  } else {
+    addr = curproc->sz;
+  }
+
   if(growproc(n) < 0)
     return -1;
+
   return addr;
 }
 
