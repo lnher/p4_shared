@@ -1,6 +1,11 @@
 struct stat;
 struct rtcdate;
 
+// START ADDED CODE
+#define VMALLOC_SIZE_BASE 4096
+#define VMALLOC_SIZE_HUGE 4194304
+// END ADDED CODE
+
 // system calls
 int fork(void);
 int exit(void) __attribute__((noreturn));
@@ -27,6 +32,7 @@ int printhugepde(void);
 int procpgdirinfo(int*);
 int setthp(int); // added new sys calls
 int getthp(void);
+int setusehugepages(int);
 
 // ulib.c
 int stat(const char*, struct stat*);
@@ -39,10 +45,6 @@ char* gets(char*, int max);
 uint strlen(const char*);
 void* memset(void*, int, uint);
 void* malloc(uint);
+void* vmalloc(uint, int);
 void free(void*);
 int atoi(const char*);
-
-// START ADDED CODE
-//const int VMALLOC_SIZE_BASE = 4096;
-//const int VMALLOC_SIZE_HUGE = 0x400000;
-// END ADDED CODE

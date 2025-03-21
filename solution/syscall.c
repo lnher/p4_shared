@@ -107,6 +107,7 @@ extern int sys_printhugepde(void);
 extern int sys_procpgdirinfo(void);
 extern int sys_setthp(void);
 extern int sys_getthp(void);
+extern int sys_setusehugepages(void);
 
 static int (*syscalls[])(void) = {
 [SYS_fork]    sys_fork,
@@ -134,6 +135,7 @@ static int (*syscalls[])(void) = {
 [SYS_procpgdirinfo]    sys_procpgdirinfo,
 [SYS_setthp]  sys_setthp,
 [SYS_getthp]  sys_getthp,
+[SYS_setusehugepages] sys_setusehugepages,
 };
 
 void

@@ -24,3 +24,4 @@
 #define SYS_procpgdirinfo 23
 #define SYS_setthp 24
 #define SYS_getthp 25
+#define SYS_setusehugepages 26

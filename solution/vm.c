@@ -64,8 +64,20 @@ mappages(pde_t *pgdir, void *va, uint size, uint pa, int perm) //CHECK AGAIN
   pte_t *pte;
   uint page_size_flag = (perm & PTE_PS) ? HUGE_PAGE_SIZE : PGSIZE;
 
-  a = (char*)PGROUNDDOWN((uint)va);
-  last = (char*)PGROUNDDOWN(((uint)va) + size - 1);
+  //struct proc *curproc = myproc(); // Get the current process
+  //int use_huge_pages = curproc->use_huge_pages; // Access the flag
+
+  //cprintf("mappages: use_huge_pages = %d", use_huge_pages);
+
+  //if(use_huge_pages) {
+  //  a = (char*)HUGEPGROUNDDOWN((uint)va);
+  //  last = (char*)HUGEPGROUNDDOWN(((uint)va) + size - 1);
+  //}
+  //else {
+    a = (char*)PGROUNDDOWN((uint)va);
+    last = (char*)PGROUNDDOWN(((uint)va) + size - 1);
+  //}
+
   for(;;){
     if((pte = walkpgdir(pgdir, a, 1)) == 0)
       return -1;
@@ -239,7 +251,9 @@ allocuvm(pde_t *pgdir, uint oldsz, uint newsz)
   }
   else {
     a = PGROUNDUP(oldsz);
-  } 
+  }
+  
+  //cprintf("allocuvm: use_huge_pages: %d \n", use_huge_pages);
 
   // Handle huge page allocation
   if (use_huge_pages) {

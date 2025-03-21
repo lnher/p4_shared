@@ -130,6 +130,7 @@ userinit(void)
 
   // to initialize hugesz to 0
   p->hugesz = 0;
+  p->use_huge_pages = 0;
   
   initproc = p;
   if((p->pgdir = setupkvm()) == 0)

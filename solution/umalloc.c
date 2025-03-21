@@ -43,6 +43,10 @@ static Header* morecore(uint nu, int use_huge_pages) {
       nu = 4096;
   }
 
+  //printf(1, "morecore: use_huge_pages = %d\n", use_huge_pages);
+
+  setusehugepages(use_huge_pages);
+
   p = sbrk(nu * sizeof(Header));
 
   if(p == (char*)-1)
@@ -52,104 +56,168 @@ static Header* morecore(uint nu, int use_huge_pages) {
   hp->s.size = nu;
 
   vfree((void*)(hp + 1), use_huge_pages);
-  return use_huge_pages ? huge_freep : freep;
+
+  if(use_huge_pages) {
+    return huge_freep;
+  }
+  else {
+    return freep;
+  }
+}
+
+// RECENTLY ADDED
+// to help with vmalloc
+void*
+normalmalloc(uint nbytes, int use_huge_pages)
+{
+  Header *p, *prevp;
+  uint nunits;
+
+  //printf(1, "normalmalloc: use_huge_pages=%d\n", use_huge_pages);
+
+  nunits = (nbytes + sizeof(Header) - 1)/sizeof(Header) + 1;
+  if((prevp = freep) == 0){
+    base.s.ptr = freep = prevp = &base;
+    base.s.size = 0;
+  }
+  for(p = prevp->s.ptr; ; prevp = p, p = p->s.ptr){
+    if(p->s.size >= nunits){
+      if(p->s.size == nunits)
+        prevp->s.ptr = p->s.ptr;
+      else {
+        p->s.size -= nunits;
+        p += p->s.size;
+        p->s.size = nunits;
+      }
+      freep = prevp;
+      return (void*)(p + 1);
+    }
+    if(p == freep)
+      if((p = morecore(nunits, use_huge_pages)) == 0)
+        return 0;
+  }
+}
+
+// to help with vmalloc
+void*
+hugemalloc(uint nbytes, int use_huge_pages)
+{
+  Header *p, *prevp;
+  uint nunits;
+
+  //printf(1, "in hugemalloc");
+
+  nunits = (nbytes + sizeof(Header) - 1)/sizeof(Header) + 1;
+  if((prevp = huge_freep) == 0){
+    huge_base.s.ptr = huge_freep = prevp = &huge_base;
+    huge_base.s.size = 0;
+  }
+  for(p = prevp->s.ptr; ; prevp = p, p = p->s.ptr){
+    if(p->s.size >= nunits){
+      if(p->s.size == nunits)
+        prevp->s.ptr = p->s.ptr;
+      else {
+        p->s.size -= nunits;
+        p += p->s.size;
+        p->s.size = nunits;
+      }
+      huge_freep = prevp;
+      return (void*)(p + 1);
+    }
+    if(p == huge_freep)
+      if((p = morecore(nunits, use_huge_pages)) == 0)
+        return 0;
+  }
 }
 
 // vmalloc: allocate nbytes from either base or huge page heap
-void* vmalloc(uint nbytes, int use_huge_pages) {
-    Header *p, *prevp;
-    uint nunits;
-    //Header *baseptr;
-    //Header **freepptr;
+void* vmalloc(uint nbytes, int pagesize) {
+  int use_huge_pages;
 
-    nunits = (nbytes + sizeof(Header) - 1) / sizeof(Header) + 1;
+  if(pagesize == VMALLOC_SIZE_BASE) {
+    use_huge_pages = 0;
+  }
+  else if (pagesize == VMALLOC_SIZE_HUGE) {
+    use_huge_pages = 1;
+  }
+  else {
+    printf(1, "Please pass VMALLOC_SIZE_BASE or VMALLOC_SIZE_HUGE as flag.\n");
+    exit();
+  }
 
-    if (use_huge_pages) {
-        if ((prevp = huge_freep) == 0) {
-            huge_base.s.ptr = huge_freep = &huge_base;
-            huge_base.s.size = 0;
-        }
-        //baseptr = &huge_base;
-        //freepptr = &huge_freep;
-    } else {
-        if ((prevp = freep) == 0) {
-            base.s.ptr = freep = &base;
-            base.s.size = 0;
-        }
-        //baseptr = &base;
-        //freepptr = &freep;
-    }
+  //printf(1, "vmalloc: use_huge_pages=%d\n", use_huge_pages);
 
-    //prevp = *freepptr;
-    
-    for (p = prevp->s.ptr; ;prevp = p, p = p->s.ptr) {
-        if (p->s.size >= nunits) {
-            if (p->s.size == nunits) {
-                prevp->s.ptr = p->s.ptr;
-            } else {
-                p->s.size -= nunits;
-                p += p->s.size;
-                p->s.size = nunits;
-            }
-            freep = prevp;
-            return (void*)(p + 1);
-        }
-        if (p == freep) {
-            p = morecore(nunits, use_huge_pages);
-            if (p == 0) {
-                return 0;
-            }
-            //prevp = *freepptr;
-        } 
-    }
+  if(use_huge_pages) {
+    return hugemalloc(nbytes, use_huge_pages);
+  }
+  else {
+    return normalmalloc(nbytes, use_huge_pages);
+  }
+}
+
+void
+normalfree(void *ap)
+{
+  Header *bp, *p;
+
+  bp = (Header*)ap - 1;
+  for(p = freep; !(bp > p && bp < p->s.ptr); p = p->s.ptr)
+    if(p >= p->s.ptr && (bp > p || bp < p->s.ptr))
+      break;
+  if(bp + bp->s.size == p->s.ptr){
+    bp->s.size += p->s.ptr->s.size;
+    bp->s.ptr = p->s.ptr->s.ptr;
+  } else
+    bp->s.ptr = p->s.ptr;
+  if(p + p->s.size == bp){
+    p->s.size += bp->s.size;
+    p->s.ptr = bp->s.ptr;
+  } else
+    p->s.ptr = bp;
+  freep = p;
+}
+
+void
+hugefree(void *ap)
+{
+  Header *bp, *p;
+
+  bp = (Header*)ap - 1;
+  for(p = huge_freep; !(bp > p && bp < p->s.ptr); p = p->s.ptr)
+    if(p >= p->s.ptr && (bp > p || bp < p->s.ptr))
+      break;
+  if(bp + bp->s.size == p->s.ptr){
+    bp->s.size += p->s.ptr->s.size;
+    bp->s.ptr = p->s.ptr->s.ptr;
+  } else
+    bp->s.ptr = p->s.ptr;
+  if(p + p->s.size == bp){
+    p->s.size += bp->s.size;
+    p->s.ptr = bp->s.ptr;
+  } else
+    p->s.ptr = bp;
+  huge_freep = p;
 }
 
 // vfree: free a block allocated by vmalloc
 void vfree(void *ap, int use_huge_pages) {
-    Header *bp, *p;
-    Header **freepptr;
-
-    bp = ((Header*)ap) - 1;
-
-    if (use_huge_pages) {
-        freepptr = &huge_freep;
-    } else {
-        freepptr = &freep;
-    }
-
-    for (p = *freepptr; !(bp > p && bp < p->s.ptr); p = p->s.ptr) {
-        if (p >= p->s.ptr && (bp > p || bp < p->s.ptr)) {
-            break;
-        }
-    }
-
-    if (bp + bp->s.size == p->s.ptr) {
-        bp->s.size += p->s.ptr->s.size;
-        bp->s.ptr = p->s.ptr->s.ptr;
-    } else {
-        bp->s.ptr = p->s.ptr;
-    }
-
-    if (p + p->s.size == bp) {
-        p->s.size += bp->s.size;
-        p->s.ptr = bp->s.ptr;
-    } else {
-        p->s.ptr = bp;
-    }
-
-    *freepptr = p;
+  if(use_huge_pages) {
+    hugefree(ap);
+  }
+  else {
+    normalfree(ap);
+  }
 }
 
 // redefine malloc and free to call vmalloc and vfree (with base flag)
 void* malloc(uint nbytes){
   int thp = getthp();
 
-
-  if(nbytes >= 0x100000 && thp != 0) { // only use huge pages if THP is active
-    return vmalloc(nbytes, 1); // use the huge pages
+  if(nbytes >= 1048576 && thp != 0) { // only use huge pages if THP is active
+    return vmalloc(nbytes, VMALLOC_SIZE_HUGE); // use the huge pages
   }
   else{
-    return vmalloc(nbytes, 0);
+    return vmalloc(nbytes, VMALLOC_SIZE_BASE);
   }
 }
 

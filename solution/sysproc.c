@@ -39,6 +39,13 @@ sys_kill(void)
   return kill(pid);
 }
 
+int
+sys_getpid(void)
+{
+  return myproc()->pid;
+}
+
+// new syscalls for thp
 int sys_setthp(int setvalue) {
   thp = setvalue;
   return 0;
@@ -48,10 +55,17 @@ int sys_getthp(void) {
   return thp;
 }
 
+// helper to set the page flag of processes
 int
-sys_getpid(void)
-{
-  return myproc()->pid;
+sys_setusehugepages(void) {
+  int value;
+  if((argint(0, &value) < 0)) {
+    return -1;
+  }
+
+  //cprintf("setusehugepages was passed, %d\n", value);
+  myproc()->use_huge_pages = value;
+  return 0;
 }
 
 int
@@ -59,18 +73,19 @@ sys_sbrk(void)
 {
   int addr;
   int n;
-  int use_huge_pages;
-
-  if(argint(0, &n) < 0)
-    return -1;
-
   struct proc *curproc = myproc();
-  use_huge_pages = curproc->use_huge_pages; // get the flag in the proc structure
+  int flag = curproc->use_huge_pages;
 
-  if (use_huge_pages) {
-    addr = curproc->hugesz;
+  if((argint(0, &n) < 0)) {
+    return -1;
+  }
+  
+  cprintf("sbrk: flag = %d, n = %d, addr = %d\n", flag, n, myproc()->hugesz);
+
+  if (flag) {
+    addr = myproc()->hugesz;
   } else {
-    addr = curproc->sz;
+    addr = myproc()->sz;
   }
 
   if(growproc(n) < 0)
