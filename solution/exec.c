@@ -38,6 +38,9 @@ exec(char *path, char **argv)
   if((pgdir = setupkvm()) == 0)
     goto bad;
 
+  curproc->hugesz = HUGE_VA_OFFSET;
+  curproc->use_huge_pages = 0;
+
   // Load program into memory.
   sz = 0;
   for(i=0, off=elf.phoff; i<elf.phnum; i++, off+=sizeof(ph)){

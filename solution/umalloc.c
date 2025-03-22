@@ -37,7 +37,7 @@ static Header* morecore(uint nu, int use_huge_pages) {
 
   if(use_huge_pages){
     if(nu < HUGE_PAGE_SIZE)
-      nu = HUGE_PAGE_SIZE;
+      nu = 4096;
   }else{
     if(nu < 4096)
       nu = 4096;
