@@ -55,32 +55,22 @@ int sys_getthp(void) {
   return thp;
 }
 
-// helper to set the page flag of processes
-int
-sys_setusehugepages(void) {
-  int value;
-  if((argint(0, &value) < 0)) {
-    return -1;
-  }
-
-  //cprintf("setusehugepages was passed, %d\n", value);
-  myproc()->use_huge_pages = value;
-  return 0;
-}
-
 int
 sys_sbrk(void)
 {
   int addr;
   int n;
-  struct proc *curproc = myproc();
-  int flag = curproc->use_huge_pages;
+  int flag;
 
   if((argint(0, &n) < 0)) {
     return -1;
   }
+
+  if((argint(1, &flag) < 0)){
+    return -1;
+  }
   
-  cprintf("sbrk: flag = %d, n = %d, addr = %d\n", flag, n, myproc()->hugesz);
+  //cprintf("sbrk: use_huge_pages = %d, n = %d, addr = %d\n", flag, n, myproc()->hugesz);
 
   if (flag) {
     addr = myproc()->hugesz;
@@ -88,7 +78,7 @@ sys_sbrk(void)
     addr = myproc()->sz;
   }
 
-  if(growproc(n) < 0)
+  if(growproc(n, flag) < 0)
     return -1;
 
   return addr;

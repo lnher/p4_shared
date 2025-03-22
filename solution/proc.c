@@ -163,11 +163,13 @@ userinit(void)
 // Grow current process's memory by n bytes.
 // Return 0 on success, -1 on failure.
 int
-growproc(int n) //CHECK AGAIN
+growproc(int n, int use_huge_pages) //CHECK AGAIN
 {
   uint sz;
   struct proc *curproc = myproc();
-  int use_huge_pages = curproc->use_huge_pages; // Get the flag from the proc structure
+  curproc->use_huge_pages = use_huge_pages; // set the flag from the proc structure
+
+  //cprintf("growproc\n");
 
   if (use_huge_pages) {
     sz = curproc->hugesz;
@@ -177,7 +179,7 @@ growproc(int n) //CHECK AGAIN
 
   if(n > 0){
     if (use_huge_pages) {
-      if((sz = allocuvm(curproc->pgdir, sz, sz + n)) == 0)
+      if((sz = allocuvm(curproc->pgdir, sz+HUGE_VA_OFFSET, sz + n)) == 0)
         return -1;
       curproc->hugesz = sz;
 
@@ -188,7 +190,7 @@ growproc(int n) //CHECK AGAIN
     }
   } else if(n < 0){
     if (use_huge_pages) {
-      if((sz = deallocuvm(curproc->pgdir, sz, sz + n)) == 0)
+      if((sz = deallocuvm(curproc->pgdir, sz+HUGE_VA_OFFSET, sz + n)) == 0)
         return -1;
       curproc->hugesz = sz;
     }
