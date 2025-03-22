@@ -2,6 +2,7 @@
 #include "stat.h"
 #include "user.h"
 #include "param.h"
+#include "memlayout.h"
 
 // Memory allocator by Kernighan and Ritchie,
 // The C programming Language, 2nd ed.  Section 8.7.
@@ -24,10 +25,9 @@ static Header *freep;
 // added new static variables for huge page heap
 static Header huge_base;
 static Header *huge_freep;
-const int HUGE_PAGE_SIZE = 0x400000;
 
 // vfree: free a block allocated by vmalloc
-void vfree(void *ap, int use_huge_pages);
+void vfree(void *ap);
 
 // Helper: morecore to allocate additional memory
 static Header* morecore(uint nu, int use_huge_pages) {
@@ -35,11 +35,7 @@ static Header* morecore(uint nu, int use_huge_pages) {
   Header *hp;
   //uint sbrk_size = nu * sizeof(Header);
 
-  if(use_huge_pages){
-    if(nu < HUGE_PAGE_SIZE)
-      nu = 4096;
-  }else{
-    if(nu < 4096)
+  if(nu < 4096){
       nu = 4096;
   }
 
@@ -53,7 +49,7 @@ static Header* morecore(uint nu, int use_huge_pages) {
   hp = (Header*)p;
   hp->s.size = nu;
 
-  vfree((void*)(hp + 1), use_huge_pages);
+  vfree((void*)(hp + 1));
 
   if(use_huge_pages) {
     return huge_freep;
@@ -203,8 +199,8 @@ hugefree(void *ap)
 }
 
 // vfree: free a block allocated by vmalloc
-void vfree(void *ap, int use_huge_pages) {
-  if(use_huge_pages) {
+void vfree(void *ap) {
+  if((((uint)ap) < HUGE_PAGE_END) && (((uint)ap) >= HUGE_PAGE_START)) {
     hugefree(ap);
   }
   else {
@@ -225,5 +221,5 @@ void* malloc(uint nbytes){
 }
 
 void free(void * ap){
-  vfree(ap, 0);
+  vfree(ap);
 }

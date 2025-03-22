@@ -46,4 +46,5 @@ void* memset(void*, int, uint);
 void* malloc(uint);
 void* vmalloc(uint, int);
 void free(void*);
+void vfree(void*);
 int atoi(const char*);
